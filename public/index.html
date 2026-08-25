@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sign in</title>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <style>
   :root {
     --ink: #1c1b19;
@@ -183,6 +184,8 @@
 
       <div class="error-msg" id="errorMsg"></div>
 
+      <div class="cf-turnstile" data-sitekey="0x4AAAAAAEbUkuBNE8dB3PsZ" data-callback="onTurnstileSuccess"></div>
+
       <button type="submit" id="submitBtn">Sign in</button>
     </form>
   </div>
@@ -199,6 +202,11 @@
     const passwordInput = document.getElementById('password');
 
     let mode = 'signin';
+    let turnstileToken = '';
+
+    window.onTurnstileSuccess = function (token) {
+      turnstileToken = token;
+    };
 
     function setMode(newMode) {
       mode = newMode;
@@ -232,6 +240,10 @@
         errorMsg.textContent = 'Enter both an email and a password.';
         return;
       }
+      if (!turnstileToken) {
+        errorMsg.textContent = 'Please complete the verification check.';
+        return;
+      }
 
       submitBtn.disabled = true;
       errorMsg.textContent = '';
@@ -241,7 +253,7 @@
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ email, password, turnstileToken }),
         });
         const data = await res.json();
 
