@@ -9,4 +9,4 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "login_page_db"
-database_id = "REPLACE_WITH_YOUR_DATABASE_ID"
+database_id ="0d6d1f02-f13b-4154-bcbc-d0ae7baf4d05"
