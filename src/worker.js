@@ -30,6 +30,81 @@ async function hashPassword(password, saltHex) {
   return bufToHex(bits);
 }
 
+// ---- Email verification ----
+
+function generateCode() {
+  // 6-digit numeric code, e.g. "042817"
+  const n = crypto.getRandomValues(new Uint32Array(1))[0] % 1000000;
+  return n.toString().padStart(6, "0");
+}
+
+async function sha256Hex(text) {
+  const enc = new TextEncoder();
+  const digest = await crypto.subtle.digest("SHA-256", enc.encode(text));
+  return bufToHex(digest);
+}
+
+const VERIFICATION_CODE_TTL_MINUTES = 15;
+
+async function createVerificationCode(env, userId) {
+  const code = generateCode();
+  const codeHash = await sha256Hex(code);
+  await env.DB
+    .prepare(
+      "INSERT INTO verification_codes (user_id, code_hash, expires_at) VALUES (?, ?, datetime('now', ?))"
+    )
+    .bind(userId, codeHash, `+${VERIFICATION_CODE_TTL_MINUTES} minutes`)
+    .run();
+  return code;
+}
+
+async function sendVerificationEmail(env, email, code) {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: env.EMAIL_FROM,
+      to: email,
+      subject: "Your verification code",
+      html: `<p>Your verification code is:</p>
+             <p style="font-size:28px;font-weight:bold;letter-spacing:4px;">${code}</p>
+             <p>This code expires in ${VERIFICATION_CODE_TTL_MINUTES} minutes. If you didn't request this, you can ignore this email.</p>`,
+    }),
+  });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    console.error("Resend error:", res.status, errBody);
+    return false;
+  }
+  return true;
+}
+
+async function verifyCode(env, userId, submittedCode) {
+  const row = await env.DB
+    .prepare(
+      `SELECT id, code_hash, expires_at FROM verification_codes
+       WHERE user_id = ? ORDER BY id DESC LIMIT 1`
+    )
+    .bind(userId)
+    .first();
+  if (!row) return { ok: false, reason: "No code found. Request a new one." };
+
+  const expired = await env.DB
+    .prepare("SELECT datetime('now') > ? AS expired")
+    .bind(row.expires_at)
+    .first();
+  if (expired.expired) return { ok: false, reason: "Code expired. Request a new one." };
+
+  const submittedHash = await sha256Hex(submittedCode.trim());
+  if (submittedHash !== row.code_hash) return { ok: false, reason: "Incorrect code." };
+
+  await env.DB.prepare("DELETE FROM verification_codes WHERE user_id = ?").bind(userId).run();
+  return { ok: true };
+}
+
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
@@ -227,15 +302,92 @@ async function handleRequest(request, env) {
         .bind(email, salt, hash)
         .first();
 
-      const token = await createSession(env, inserted.id);
+      const code = await createVerificationCode(env, inserted.id);
+      const sent = await sendVerificationEmail(env, email, code);
+      if (!sent) {
+        return json({ error: "Account created, but the verification email failed to send. Try resending it." }, 502);
+      }
 
+      // No session yet — the account isn't usable until the email is verified.
+      return json({ ok: true, email, needsVerification: true });
+    } catch (err) {
+      return json({ error: "Something went wrong creating your account." }, 500);
+    }
+  }
+
+  if (url.pathname === "/api/verify-email" && request.method === "POST") {
+    try {
+      const body = await request.json();
+      if (typeof body.email !== "string" || typeof body.code !== "string") {
+        return json({ error: "Invalid request." }, 400);
+      }
+      const email = normalizeEmail(body.email);
+
+      const verifyFails = await countRecentAttempts(env, email, "verify-fail", 15);
+      if (verifyFails >= 10) {
+        return json({ error: "Too many attempts. Please request a new code." }, 429);
+      }
+
+      const user = await env.DB
+        .prepare("SELECT id, email, email_verified FROM users WHERE email = ?")
+        .bind(email)
+        .first();
+      if (!user) {
+        return json({ error: "Invalid email or code." }, 400);
+      }
+      if (user.email_verified) {
+        return json({ error: "This email is already verified. Please sign in." }, 400);
+      }
+
+      const result = await verifyCode(env, user.id, body.code);
+      if (!result.ok) {
+        await recordAttempt(env, email, "verify-fail");
+        return json({ error: result.reason }, 400);
+      }
+
+      await env.DB.prepare("UPDATE users SET email_verified = 1 WHERE id = ?").bind(user.id).run();
+
+      const token = await createSession(env, user.id);
       return json(
-        { ok: true, email },
+        { ok: true, email: user.email },
         200,
         { "Set-Cookie": sessionCookie(token, SESSION_MAX_AGE_SECONDS) }
       );
     } catch (err) {
-      return json({ error: "Something went wrong creating your account." }, 500);
+      return json({ error: "Something went wrong verifying your email." }, 500);
+    }
+  }
+
+  if (url.pathname === "/api/resend-code" && request.method === "POST") {
+    try {
+      const body = await request.json();
+      if (typeof body.email !== "string") {
+        return json({ error: "Invalid request." }, 400);
+      }
+      const email = normalizeEmail(body.email);
+
+      // Throttle resends per email: max 3 per 15 minutes.
+      const resendAttempts = await countRecentAttempts(env, email, "resend", 15);
+      if (resendAttempts >= 3) {
+        return json({ error: "Too many code requests. Please wait a few minutes." }, 429);
+      }
+      await recordAttempt(env, email, "resend");
+
+      const user = await env.DB
+        .prepare("SELECT id, email, email_verified FROM users WHERE email = ?")
+        .bind(email)
+        .first();
+
+      // Always return ok (don't reveal whether the account exists), but only
+      // actually send if there's a real, unverified account.
+      if (user && !user.email_verified) {
+        const code = await createVerificationCode(env, user.id);
+        await sendVerificationEmail(env, email, code);
+      }
+
+      return json({ ok: true });
+    } catch (err) {
+      return json({ error: "Something went wrong resending the code." }, 500);
     }
   }
 
@@ -271,7 +423,7 @@ async function handleRequest(request, env) {
       }
 
       const user = await env.DB
-        .prepare("SELECT id, email, salt, password_hash FROM users WHERE email = ?")
+        .prepare("SELECT id, email, salt, password_hash, email_verified FROM users WHERE email = ?")
         .bind(email)
         .first();
 
@@ -286,6 +438,10 @@ async function handleRequest(request, env) {
         await recordAttempt(env, email, "login-fail");
         await recordAttempt(env, ip, "login-fail");
         return json({ error: "Invalid email or password." }, 401);
+      }
+
+      if (!user.email_verified) {
+        return json({ error: "Please verify your email before signing in.", needsVerification: true, email: user.email }, 403);
       }
 
       const token = await createSession(env, user.id);
