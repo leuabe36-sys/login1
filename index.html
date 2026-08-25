@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in</title>
+<style>
+  :root {
+    --ink: #1c1b19;
+    --paper: #faf8f4;
+    --accent: #2e5339;
+    --accent-soft: #e7ede8;
+    --line: #d9d5cb;
+    --error: #b3261e;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--paper);
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+    color: var(--ink);
+    padding: 24px;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 380px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 40px 36px;
+  }
+
+  .mark {
+    width: 36px;
+    height: 36px;
+    border: 1.5px solid var(--ink);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    margin-bottom: 24px;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    letter-spacing: 0.2px;
+  }
+
+  .sub {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13.5px;
+    color: #6b675f;
+    margin: 0 0 28px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 24px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 3px;
+  }
+
+  .tab {
+    flex: 1;
+    text-align: center;
+    padding: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #6b675f;
+    background: none;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .tab.active {
+    background: #fff;
+    color: var(--ink);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  }
+
+  form { display: flex; flex-direction: column; gap: 18px; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+
+  label {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b675f;
+  }
+
+  input {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 15px;
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--paper);
+    color: var(--ink);
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  input::placeholder { color: #a7a297; }
+
+  input:focus, input:focus-visible {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .error-msg {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 12.5px;
+    color: var(--error);
+    min-height: 16px;
+    margin-top: -6px;
+  }
+
+  button[type="submit"] {
+    margin-top: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 12px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+
+  button[type="submit"]:hover { background: #234029; }
+  button[type="submit"]:active { transform: translateY(1px); }
+  button[type="submit"]:disabled { opacity: 0.6; cursor: default; }
+
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    button { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="card" id="card">
+    <div class="mark">◆</div>
+    <h1 id="heading">Sign in</h1>
+    <p class="sub" id="subheading">Enter your details to continue.</p>
+
+    <div class="tabs">
+      <button type="button" class="tab active" id="tabSignin">Sign in</button>
+      <button type="button" class="tab" id="tabSignup">Create account</button>
+    </div>
+
+    <form id="authForm" novalidate>
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email" required>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+      </div>
+
+      <div class="error-msg" id="errorMsg"></div>
+
+      <button type="submit" id="submitBtn">Sign in</button>
+    </form>
+  </div>
+
+  <script>
+    const card = document.getElementById('card');
+    const heading = document.getElementById('heading');
+    const subheading = document.getElementById('subheading');
+    const tabSignin = document.getElementById('tabSignin');
+    const tabSignup = document.getElementById('tabSignup');
+    const form = document.getElementById('authForm');
+    const errorMsg = document.getElementById('errorMsg');
+    const submitBtn = document.getElementById('submitBtn');
+    const passwordInput = document.getElementById('password');
+
+    let mode = 'signin';
+
+    function setMode(newMode) {
+      mode = newMode;
+      errorMsg.textContent = '';
+      if (mode === 'signin') {
+        tabSignin.classList.add('active');
+        tabSignup.classList.remove('active');
+        heading.textContent = 'Sign in';
+        subheading.textContent = 'Enter your details to continue.';
+        submitBtn.textContent = 'Sign in';
+        passwordInput.autocomplete = 'current-password';
+      } else {
+        tabSignup.classList.add('active');
+        tabSignin.classList.remove('active');
+        heading.textContent = 'Create account';
+        subheading.textContent = 'Use at least 8 characters for your password.';
+        submitBtn.textContent = 'Create account';
+        passwordInput.autocomplete = 'new-password';
+      }
+    }
+
+    tabSignin.addEventListener('click', () => setMode('signin'));
+    tabSignup.addEventListener('click', () => setMode('signup'));
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const email = document.getElementById('email').value.trim();
+      const password = passwordInput.value;
+
+      if (!email || !password) {
+        errorMsg.textContent = 'Enter both an email and a password.';
+        return;
+      }
+
+      submitBtn.disabled = true;
+      errorMsg.textContent = '';
+
+      try {
+        const endpoint = mode === 'signin' ? '/api/login' : '/api/signup';
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          errorMsg.textContent = data.error || 'Something went wrong.';
+          submitBtn.disabled = false;
+          return;
+        }
+
+        const name = data.email.split('@')[0];
+        card.innerHTML =
+          '<div class="mark">◆</div>' +
+          '<h1>Welcome, ' + name + '</h1>' +
+          '<p class="sub">You\'re signed in as ' + data.email + '.</p>';
+      } catch (err) {
+        errorMsg.textContent = 'Could not reach the server. Try again.';
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+
+</body>
+</html>
