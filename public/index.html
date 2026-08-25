@@ -224,6 +224,74 @@
       turnstileToken = token;
     };
 
+    function showVerify(email, opts) {
+      opts = opts || {};
+      card.innerHTML =
+        '<div class="mark">◆</div>' +
+        '<h1>Check your email</h1>' +
+        '<p class="sub">We sent a 6-digit code to ' + email + '.</p>' +
+        '<form id="verifyForm" novalidate>' +
+          '<div class="field">' +
+            '<label for="code">Verification code</label>' +
+            '<input type="text" id="code" name="code" placeholder="000000" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>' +
+          '</div>' +
+          '<div class="error-msg" id="verifyError"></div>' +
+          '<button type="submit" id="verifySubmit">Verify</button>' +
+        '</form>' +
+        '<button type="button" id="resendBtn" class="logout-btn">Resend code</button>';
+
+      const verifyForm = document.getElementById('verifyForm');
+      const verifyError = document.getElementById('verifyError');
+      const verifySubmit = document.getElementById('verifySubmit');
+      const resendBtn = document.getElementById('resendBtn');
+
+      if (opts.notice) verifyError.textContent = opts.notice;
+
+      verifyForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const code = document.getElementById('code').value.trim();
+        if (!code) {
+          verifyError.textContent = 'Enter the code from your email.';
+          return;
+        }
+        verifySubmit.disabled = true;
+        verifyError.textContent = '';
+        try {
+          const res = await fetch('/api/verify-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, code }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            verifyError.textContent = data.error || 'Something went wrong.';
+            verifySubmit.disabled = false;
+            return;
+          }
+          showWelcome(data.email);
+        } catch (err) {
+          verifyError.textContent = 'Could not reach the server. Try again.';
+          verifySubmit.disabled = false;
+        }
+      });
+
+      resendBtn.addEventListener('click', async function () {
+        resendBtn.disabled = true;
+        verifyError.textContent = '';
+        try {
+          await fetch('/api/resend-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email }),
+          });
+          verifyError.textContent = 'A new code has been sent.';
+        } catch (err) {
+          verifyError.textContent = 'Could not reach the server. Try again.';
+        }
+        setTimeout(() => { resendBtn.disabled = false; }, 15000);
+      });
+    }
+
     function showWelcome(email) {
       const name = email.split('@')[0];
       card.innerHTML =
@@ -300,12 +368,20 @@
         const data = await res.json();
 
         if (!res.ok) {
+          if (data.needsVerification) {
+            showVerify(data.email, mode === 'signin' ? { notice: data.error } : {});
+            return;
+          }
           errorMsg.textContent = data.error || 'Something went wrong.';
           submitBtn.disabled = false;
           return;
         }
 
-        const name = data.email.split('@')[0];
+        if (data.needsVerification) {
+          showVerify(data.email);
+          return;
+        }
+
         showWelcome(data.email);
       } catch (err) {
         errorMsg.textContent = 'Could not reach the server. Try again.';
