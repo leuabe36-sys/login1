@@ -154,6 +154,22 @@
 
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+  .logout-btn {
+    margin-top: 8px;
+    width: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13.5px;
+    font-weight: 600;
+    padding: 10px;
+    background: none;
+    color: var(--accent);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .logout-btn:hover { background: var(--accent-soft); }
+
   @media (prefers-reduced-motion: reduce) {
     button { transition: none; }
   }
@@ -207,6 +223,32 @@
     window.onTurnstileSuccess = function (token) {
       turnstileToken = token;
     };
+
+    function showWelcome(email) {
+      const name = email.split('@')[0];
+      card.innerHTML =
+        '<div class="mark">◆</div>' +
+        '<h1>Welcome, ' + name + '</h1>' +
+        '<p class="sub">You\'re signed in as ' + email + '.</p>' +
+        '<button type="button" id="logoutBtn" class="logout-btn">Sign out</button>';
+      document.getElementById('logoutBtn').addEventListener('click', async function () {
+        await fetch('/api/logout', { method: 'POST' });
+        location.reload();
+      });
+    }
+
+    // If a session cookie is already valid, skip the form entirely.
+    (async function checkSession() {
+      try {
+        const res = await fetch('/api/me');
+        if (res.ok) {
+          const data = await res.json();
+          showWelcome(data.email);
+        }
+      } catch (err) {
+        // Not signed in, or request failed — show the form as normal.
+      }
+    })();
 
     function setMode(newMode) {
       mode = newMode;
@@ -264,10 +306,7 @@
         }
 
         const name = data.email.split('@')[0];
-        card.innerHTML =
-          '<div class="mark">◆</div>' +
-          '<h1>Welcome, ' + name + '</h1>' +
-          '<p class="sub">You\'re signed in as ' + data.email + '.</p>';
+        showWelcome(data.email);
       } catch (err) {
         errorMsg.textContent = 'Could not reach the server. Try again.';
         submitBtn.disabled = false;
