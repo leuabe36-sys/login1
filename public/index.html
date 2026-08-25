@@ -170,6 +170,71 @@
 
   .logout-btn:hover { background: var(--accent-soft); }
 
+  .otp-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
+
+  .otp-box {
+    width: 44px;
+    height: 52px;
+    text-align: center;
+    font-size: 22px;
+    font-weight: 700;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    border: 1.5px solid var(--line);
+    border-radius: 6px;
+    background: var(--paper);
+    color: var(--ink);
+    outline: none;
+    padding: 0;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .otp-box:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .otp-box.filled {
+    border-color: var(--accent);
+  }
+
+  .otp-row.shake {
+    animation: shake 0.4s ease;
+  }
+
+  .otp-row.shake .otp-box {
+    border-color: var(--error);
+  }
+
+  @keyframes shake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX(4px); }
+  }
+
+  .otp-timer {
+    text-align: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    color: #6b675f;
+  }
+
+  .otp-timer .mono {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .otp-timer.expired .mono { color: var(--error); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .otp-row.shake { animation: none; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     button { transition: none; }
   }
@@ -226,16 +291,21 @@
 
     function showVerify(email, opts) {
       opts = opts || {};
+      const TTL_SECONDS = 15 * 60; // matches VERIFICATION_CODE_TTL_MINUTES on the server
+
       card.innerHTML =
         '<div class="mark">◆</div>' +
         '<h1>Check your email</h1>' +
         '<p class="sub">We sent a 6-digit code to ' + email + '.</p>' +
         '<form id="verifyForm" novalidate>' +
-          '<div class="field">' +
-            '<label for="code">Verification code</label>' +
-            '<input type="text" id="code" name="code" placeholder="000000" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>' +
+          '<div class="otp-row" id="otpRow">' +
+            Array.from({ length: 6 }, (_, i) =>
+              '<input class="otp-box" type="text" inputmode="numeric" maxlength="1" ' +
+              'autocomplete="' + (i === 0 ? 'one-time-code' : 'off') + '" data-i="' + i + '">'
+            ).join('') +
           '</div>' +
-          '<div class="error-msg" id="verifyError"></div>' +
+          '<p class="otp-timer" id="otpTimer">Code expires in <span class="mono" id="otpClock">15:00</span></p>' +
+          '<div class="error-msg" id="verifyError" style="text-align:center;"></div>' +
           '<button type="submit" id="verifySubmit">Verify</button>' +
         '</form>' +
         '<button type="button" id="resendBtn" class="logout-btn">Resend code</button>';
@@ -244,14 +314,73 @@
       const verifyError = document.getElementById('verifyError');
       const verifySubmit = document.getElementById('verifySubmit');
       const resendBtn = document.getElementById('resendBtn');
+      const otpRow = document.getElementById('otpRow');
+      const otpTimer = document.getElementById('otpTimer');
+      const otpClock = document.getElementById('otpClock');
+      const boxes = Array.from(otpRow.querySelectorAll('.otp-box'));
 
       if (opts.notice) verifyError.textContent = opts.notice;
 
+      // ---- digit box behavior: type-to-advance, backspace, paste ----
+      boxes.forEach((box, i) => {
+        box.addEventListener('input', () => {
+          box.value = box.value.replace(/[^0-9]/g, '').slice(0, 1);
+          box.classList.toggle('filled', box.value !== '');
+          if (box.value && i < boxes.length - 1) boxes[i + 1].focus();
+          if (boxes.every(b => b.value)) verifyForm.requestSubmit();
+        });
+        box.addEventListener('keydown', (e) => {
+          if (e.key === 'Backspace' && !box.value && i > 0) {
+            boxes[i - 1].focus();
+          }
+        });
+        box.addEventListener('paste', (e) => {
+          e.preventDefault();
+          const digits = (e.clipboardData.getData('text') || '').replace(/[^0-9]/g, '').slice(0, boxes.length);
+          digits.split('').forEach((d, idx) => {
+            if (boxes[idx]) {
+              boxes[idx].value = d;
+              boxes[idx].classList.add('filled');
+            }
+          });
+          const next = boxes[Math.min(digits.length, boxes.length - 1)];
+          if (next) next.focus();
+          if (boxes.every(b => b.value)) verifyForm.requestSubmit();
+        });
+      });
+      boxes[0].focus();
+
+      // ---- countdown timer ----
+      let remaining = TTL_SECONDS;
+      function tick() {
+        const m = Math.floor(remaining / 60).toString().padStart(2, '0');
+        const s = (remaining % 60).toString().padStart(2, '0');
+        otpClock.textContent = m + ':' + s;
+        if (remaining <= 0) {
+          otpTimer.classList.add('expired');
+          otpTimer.innerHTML = 'Code expired — request a new one.';
+          clearInterval(timerId);
+          return;
+        }
+        remaining -= 1;
+      }
+      tick();
+      let timerId = setInterval(tick, 1000);
+
+      function shakeAndClear(message) {
+        verifyError.textContent = message;
+        boxes.forEach(b => { b.value = ''; b.classList.remove('filled'); });
+        otpRow.classList.remove('shake');
+        void otpRow.offsetWidth; // restart animation
+        otpRow.classList.add('shake');
+        boxes[0].focus();
+      }
+
       verifyForm.addEventListener('submit', async function (e) {
         e.preventDefault();
-        const code = document.getElementById('code').value.trim();
-        if (!code) {
-          verifyError.textContent = 'Enter the code from your email.';
+        const code = boxes.map(b => b.value).join('');
+        if (code.length !== 6) {
+          shakeAndClear('Enter all 6 digits.');
           return;
         }
         verifySubmit.disabled = true;
@@ -264,13 +393,14 @@
           });
           const data = await res.json();
           if (!res.ok) {
-            verifyError.textContent = data.error || 'Something went wrong.';
+            shakeAndClear(data.error || 'Something went wrong.');
             verifySubmit.disabled = false;
             return;
           }
+          clearInterval(timerId);
           showWelcome(data.email);
         } catch (err) {
-          verifyError.textContent = 'Could not reach the server. Try again.';
+          shakeAndClear('Could not reach the server. Try again.');
           verifySubmit.disabled = false;
         }
       });
@@ -285,6 +415,11 @@
             body: JSON.stringify({ email }),
           });
           verifyError.textContent = 'A new code has been sent.';
+          remaining = TTL_SECONDS;
+          otpTimer.classList.remove('expired');
+          clearInterval(timerId);
+          timerId = setInterval(tick, 1000);
+          tick();
         } catch (err) {
           verifyError.textContent = 'Could not reach the server. Try again.';
         }
