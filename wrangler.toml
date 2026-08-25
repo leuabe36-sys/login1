@@ -2,6 +2,9 @@ name = "login-page"
 main = "src/worker.js"
 compatibility_date = "2024-11-01"
 
+[vars]
+EMAIL_FROM = "onboarding@resend.dev"
+
 [assets]
 directory = "./public"
 binding = "ASSETS"
