@@ -262,8 +262,8 @@ async function handleRequest(request, env) {
       }
 
       // Throttle signups per IP: max 5 per hour.
-      const signupAttempts = await countRecentAttempts(env, ip, "signup", 60);
-      if (signupAttempts >= 5) {
+      const signupAttempts = await countRecentAttempts(env, ip, "signup", 2);
+      if (signupAttempts >= 50) {
         return json({ error: "Too many accounts created recently. Try again later." }, 429);
       }
       await recordAttempt(env, ip, "signup");
