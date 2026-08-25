@@ -37,7 +37,37 @@ function json(data, status = 200) {
 }
 
 function isValidEmail(email) {
+  // Reasonable length cap + strict shape check. Rejects control characters,
+  // whitespace, and anything that isn't a plausible email address.
+  if (typeof email !== "string") return false;
+  if (email.length === 0 || email.length > 254) return false;
+  if (/[\x00-\x1F\x7F]/.test(email)) return false; // control chars / null bytes
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function normalizeEmail(email) {
+  return email.trim().toLowerCase();
+}
+
+function isValidPassword(password) {
+  if (typeof password !== "string") return false;
+  if (/[\x00-\x1F\x7F]/.test(password)) return false; // control chars / null bytes
+  return password.length >= 8 && password.length <= 256;
+}
+
+async function verifyTurnstile(token, secretKey, remoteip) {
+  if (!token) return false;
+  const body = new FormData();
+  body.append("secret", secretKey);
+  body.append("response", token);
+  if (remoteip) body.append("remoteip", remoteip);
+
+  const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    body,
+  });
+  const outcome = await res.json();
+  return outcome.success === true;
 }
 
 export default {
@@ -46,17 +76,28 @@ export default {
 
     if (url.pathname === "/api/signup" && request.method === "POST") {
       try {
-        const { email, password } = await request.json();
-
-        if (!email || !password) {
-          return json({ error: "Email and password are required." }, 400);
+        const body = await request.json();
+        if (typeof body.email !== "string" || typeof body.password !== "string") {
+          return json({ error: "Invalid request." }, 400);
         }
-        if (!isValidEmail(email)) {
+
+        const verified = await verifyTurnstile(
+          body.turnstileToken,
+          env.TURNSTILE_SECRET_KEY,
+          request.headers.get("CF-Connecting-IP")
+        );
+        if (!verified) {
+          return json({ error: "Verification failed. Please try again." }, 403);
+        }
+
+        if (!isValidEmail(body.email)) {
           return json({ error: "That email address doesn't look right." }, 400);
         }
-        if (password.length < 8) {
-          return json({ error: "Password must be at least 8 characters." }, 400);
+        if (!isValidPassword(body.password)) {
+          return json({ error: "Password must be 8-256 characters." }, 400);
         }
+        const email = normalizeEmail(body.email);
+        const password = body.password;
 
         const existing = await env.DB
           .prepare("SELECT id FROM users WHERE email = ?")
@@ -82,11 +123,25 @@ export default {
 
     if (url.pathname === "/api/login" && request.method === "POST") {
       try {
-        const { email, password } = await request.json();
+        const body = await request.json();
+        if (typeof body.email !== "string" || typeof body.password !== "string") {
+          return json({ error: "Invalid request." }, 400);
+        }
 
-        if (!email || !password) {
+        const verified = await verifyTurnstile(
+          body.turnstileToken,
+          env.TURNSTILE_SECRET_KEY,
+          request.headers.get("CF-Connecting-IP")
+        );
+        if (!verified) {
+          return json({ error: "Verification failed. Please try again." }, 403);
+        }
+
+        if (!isValidEmail(body.email) || !body.password) {
           return json({ error: "Enter both an email and a password." }, 400);
         }
+        const email = normalizeEmail(body.email);
+        const password = body.password;
 
         const user = await env.DB
           .prepare("SELECT email, salt, password_hash FROM users WHERE email = ?")
